@@ -7,7 +7,7 @@ numpy==1.26.4
 timm==1.0.11
 albumentations==1.4.21
 grad-cam==1.5.5
-pydantic==2.9.2
+pydantic
 
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.9.1+cpu
