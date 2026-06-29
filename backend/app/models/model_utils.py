@@ -4,7 +4,8 @@ Grad-CAM explainability heatmaps.
 """
 import json
 import os
-import cv2
+from PIL import Image
+import io
 import numpy as np
 import torch
 import torch.nn as nn
@@ -57,11 +58,10 @@ def predict_with_explanation(image_bytes: bytes):
     """
     Takes raw image bytes, returns prediction + confidence + base64 Grad-CAM overlay.
     """
-    # Decode image bytes -> numpy array (BGR, as cv2 expects)
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    raw_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    raw_image = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
-    raw_image_resized = cv2.resize(raw_image, (IMG_SIZE, IMG_SIZE))
+    # Decode image bytes -> PIL Image -> numpy array (RGB)
+    pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    pil_image_resized = pil_image.resize((IMG_SIZE, IMG_SIZE))
+    raw_image_resized = np.array(pil_image_resized)
 
     # Preprocess for model input
     transformed = eval_transform(image=raw_image_resized)
@@ -88,9 +88,12 @@ def predict_with_explanation(image_bytes: bytes):
     cam_overlay = show_cam_on_image(rgb_float, grayscale_cam, use_rgb=True)
 
     # Encode overlay image as base64 PNG (so it can be sent as JSON to the frontend)
+    # Encode overlay image as base64 PNG (so it can be sent as JSON to the frontend)
     import base64
-    _, buffer = cv2.imencode(".png", cv2.cvtColor(cam_overlay, cv2.COLOR_RGB2BGR))
-    cam_base64 = base64.b64encode(buffer).decode("utf-8")
+    overlay_pil = Image.fromarray(cam_overlay)
+    buf = io.BytesIO()
+    overlay_pil.save(buf, format="PNG")
+    cam_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
     pred_class_code = IDX_TO_CLASS[pred_idx]
     pred_class_full_name = LABEL_MAP[pred_class_code]
