@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { Upload, AlertCircle, Loader2, Activity } from 'lucide-react'
 import './App.css'
 
-const API_URL = 'http://127.0.0.1:8000/api/predict'
+const API_URL = 'https://skin-lesion-classifier-production.up.railway.app/api/predict'
 
 // Map class codes to a rough "risk tier" for visual emphasis only.
 // This is NOT a medical judgment - just a UI cue based on common dermatology categorization.
@@ -91,7 +91,7 @@ function App() {
         <Activity size={28} strokeWidth={2.2} />
         <div>
           <h1>Skin Lesion Classifier</h1>
-          <p className="subtitle">Research demo with Grad-CAM explainability — not a diagnostic tool</p>
+          <p className="subtitle">Research demo using a fine-tuned EfficientNet-B0 — not a diagnostic tool</p>
         </div>
       </header>
 
@@ -125,15 +125,7 @@ function App() {
                 <img src={previewUrl} alt="Uploaded lesion" />
               </div>
 
-              {result && (
-                <div className="image-card">
-                  <span className="image-label">Grad-CAM: where the model looked</span>
-                  <img
-                    src={`data:image/png;base64,${result.gradcam_overlay_base64}`}
-                    alt="Grad-CAM heatmap overlay"
-                  />
-                </div>
-              )}
+
             </div>
 
             <div className="actions">
