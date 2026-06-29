@@ -10,8 +10,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import timm
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
@@ -46,12 +44,21 @@ model.eval()
 target_layers = [model.conv_head]
 cam = GradCAM(model=model, target_layers=target_layers)
 
-# --- Same preprocessing as training (eval_transform from the notebook) ---
-eval_transform = A.Compose([
-    A.Resize(IMG_SIZE, IMG_SIZE),
-    A.Normalize(mean=NORM_MEAN, std=NORM_STD),
-    ToTensorV2(),
-])
+# --- Normalization constants as numpy arrays (reused per-request) ---
+_NORM_MEAN_ARR = np.array(NORM_MEAN, dtype=np.float32)
+_NORM_STD_ARR = np.array(NORM_STD, dtype=np.float32)
+
+
+def eval_transform(image: np.ndarray):
+    """
+    Manual replacement for albumentations' eval_transform (resize + normalize + to-tensor).
+    No cv2/albumentations dependency - pure numpy/torch.
+    `image` is expected to already be resized to IMG_SIZE x IMG_SIZE, RGB, uint8 HWC.
+    """
+    img_float = image.astype(np.float32) / 255.0
+    img_normalized = (img_float - _NORM_MEAN_ARR) / _NORM_STD_ARR
+    img_tensor = torch.from_numpy(img_normalized).permute(2, 0, 1).float()
+    return {"image": img_tensor}
 
 
 def predict_with_explanation(image_bytes: bytes):
@@ -64,7 +71,7 @@ def predict_with_explanation(image_bytes: bytes):
     raw_image_resized = np.array(pil_image_resized)
 
     # Preprocess for model input
-    transformed = eval_transform(image=raw_image_resized)
+    transformed = eval_transform(raw_image_resized)
     input_tensor = transformed["image"].unsqueeze(0).to(device)
 
     # Run prediction
@@ -87,7 +94,6 @@ def predict_with_explanation(image_bytes: bytes):
     rgb_float = raw_image_resized.astype(np.float32) / 255.0
     cam_overlay = show_cam_on_image(rgb_float, grayscale_cam, use_rgb=True)
 
-    # Encode overlay image as base64 PNG (so it can be sent as JSON to the frontend)
     # Encode overlay image as base64 PNG (so it can be sent as JSON to the frontend)
     import base64
     overlay_pil = Image.fromarray(cam_overlay)
