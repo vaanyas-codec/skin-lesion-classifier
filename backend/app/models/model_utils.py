@@ -1,6 +1,10 @@
 """
-Loads the trained EfficientNet-B0 model, runs predictions, and generates
-Grad-CAM explainability heatmaps.
+Loads the trained EfficientNet-B0 model and runs predictions.
+Note: Grad-CAM explainability is documented in the training notebook (Colab) with
+real example outputs - it is intentionally NOT included in this deployed API,
+since pytorch_grad_cam has a hard internal dependency on OpenCV/cv2, which requires
+a system-level libGL library not reliably available on minimal cloud containers
+(Render/Railway free tiers). See the project README/notebook for Grad-CAM results.
 """
 import json
 import os
@@ -10,9 +14,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import timm
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
 # --- Paths ---
 MODELS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,10 +41,6 @@ model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
 model = model.to(device)
 model.eval()
 
-# --- Grad-CAM setup ---
-target_layers = [model.conv_head]
-cam = GradCAM(model=model, target_layers=target_layers)
-
 # --- Normalization constants as numpy arrays (reused per-request) ---
 _NORM_MEAN_ARR = np.array(NORM_MEAN, dtype=np.float32)
 _NORM_STD_ARR = np.array(NORM_STD, dtype=np.float32)
@@ -63,7 +60,8 @@ def eval_transform(image: np.ndarray):
 
 def predict_with_explanation(image_bytes: bytes):
     """
-    Takes raw image bytes, returns prediction + confidence + base64 Grad-CAM overlay.
+    Takes raw image bytes, returns prediction + confidence + full probability breakdown.
+    (No Grad-CAM overlay in the deployed API - see module docstring for why.)
     """
     # Decode image bytes -> PIL Image -> numpy array (RGB)
     pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -87,20 +85,6 @@ def predict_with_explanation(image_bytes: bytes):
         for i in range(NUM_CLASSES)
     }
 
-    # Grad-CAM heatmap for the predicted class
-    targets = [ClassifierOutputTarget(pred_idx)]
-    grayscale_cam = cam(input_tensor=input_tensor, targets=targets)[0]
-
-    rgb_float = raw_image_resized.astype(np.float32) / 255.0
-    cam_overlay = show_cam_on_image(rgb_float, grayscale_cam, use_rgb=True)
-
-    # Encode overlay image as base64 PNG (so it can be sent as JSON to the frontend)
-    import base64
-    overlay_pil = Image.fromarray(cam_overlay)
-    buf = io.BytesIO()
-    overlay_pil.save(buf, format="PNG")
-    cam_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-
     pred_class_code = IDX_TO_CLASS[pred_idx]
     pred_class_full_name = LABEL_MAP[pred_class_code]
 
@@ -109,5 +93,4 @@ def predict_with_explanation(image_bytes: bytes):
         "predicted_class_name": pred_class_full_name,
         "confidence": round(confidence, 4),
         "all_probabilities": {k: round(v, 4) for k, v in all_probs.items()},
-        "gradcam_overlay_base64": cam_base64,
     }
